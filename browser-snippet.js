@@ -1,8 +1,3 @@
-// Create a CSV from your online banking
-// Load all the transactions, then run this in the console
-
-// Yes, RBC says they'll do this for you, but they only
-// let you download the last couple of months!
 (() => {
   const normalizeAmount = (amount) =>
     amount
@@ -12,11 +7,11 @@
       .replace(',', '.');
 
   const extractDateFromId = (id) => {
-    const match = id.match(/\d{4}-\d{2}-\d{2}/); // extract the date pattern
+    const match = id.match(/\d{4}-\d{2}-\d{2}/);
     if (!match) {
       throw new Error(`Could not extract a valid date from id "${id}".`);
     }
-    return match[0]; // return just the date part
+    return match[0];
   };
 
   const createDownloadLink = (linkElement, content) => {
@@ -30,17 +25,44 @@
     linkElement.innerHTML = '<span>CSV</span>';
   };
 
-  const extractTransactions = (table) => {
-    if (table?.nodeName !== 'TABLE') {
-      throw new Error(`Expected a <table> element with transaction data.`);
+  const findTableWithMostRows = () => {
+    const tables = document.querySelectorAll('table.rbc-transaction-list-table');
+    if (!tables.length) {
+      throw new Error('No transaction tables found.');
     }
 
+    let bestTable = null;
+    let maxRows = 0;
+
+    tables.forEach((table) => {
+      const rowCount = table.querySelectorAll('tbody tr').length;
+      console.log('Table found with', rowCount, 'rows.');
+      if (rowCount > maxRows) {
+        maxRows = rowCount;
+        bestTable = table;
+      }
+    });
+
+    if (!bestTable) {
+      throw new Error('Could not find a suitable transaction table.');
+    }
+
+    console.log('Selected table with', maxRows, 'rows.');
+    return bestTable;
+  };
+
+  const extractTransactions = (table) => {
     const rows = Array.from(table.querySelectorAll('tbody tr'));
+    console.log('Extracting', rows.length, 'rows from table.');
+
     const csvLines = [`"Date","Description","Transaction","Debit","Credit","Total"`];
 
-    rows.forEach((row) => {
-      const cells = row.querySelectorAll('td');
-      if (cells.length < 5) return; // Skip malformed rows
+    rows.forEach((row, index) => {
+      const cells = row.querySelectorAll('th, td'); // <-- FIXED
+      if (cells.length < 4) {
+        console.warn(`Skipping row ${index + 1} due to insufficient cells.`);
+        return;
+      }
 
       const [dateCell, descCell, debitCell, creditCell, totalCell] = cells;
 
@@ -49,9 +71,9 @@
       const transactionId = /\s-\s(\d+)/.exec(description)?.[1] || '';
       const debit = normalizeAmount(debitCell.textContent || '');
       const credit = normalizeAmount(creditCell.textContent || '');
-      const total = normalizeAmount(totalCell.textContent || '');
+      const total = cells.length >= 5 ? normalizeAmount(totalCell.textContent || '') : '';
 
-      const safeDesc = description.replace(/"/g, '""'); // escape quotes for CSV
+      const safeDesc = description.replace(/"/g, '""');
 
       csvLines.push(`"${date}","${safeDesc}","${transactionId}","${debit}","${credit}","${total}"`);
     });
@@ -60,9 +82,15 @@
   };
 
   // === Execute ===
-  const table = document.querySelector('table.rbc-transaction-list-table');
+  const table = findTableWithMostRows();
   const downloadButton = document.querySelector('[rbcportalsubmit="DownloadTransactions"]');
+
+  if (!downloadButton) {
+    throw new Error('Download button not found.');
+  }
 
   const csvContent = extractTransactions(table);
   createDownloadLink(downloadButton, csvContent);
+
+  console.log('CSV download link ready.');
 })();
