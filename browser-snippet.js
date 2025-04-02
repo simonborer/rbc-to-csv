@@ -63,6 +63,10 @@
         console.warn(`Skipping row ${index + 1} due to insufficient cells.`);
         return;
       }
+      if ([...cells].every(cell => cell.nodeName === 'TH')) {
+        console.log(`Skipping row ${index + 1} because all cells are <th>.`);
+        return;
+      }
 
       const [dateCell, descCell, debitCell, creditCell, totalCell] = cells;
 
