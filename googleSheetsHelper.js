@@ -15,14 +15,52 @@ function getUsCpi() {
 }
 
 function getUsCpiYearOverYear() {
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCNS&api_key=${FRED_API_KEY}&file_type=json`;
-  const response = UrlFetchApp.fetch(url);
-  const data = JSON.parse(response.getContentText());
-  const obs = data.observations;
-  const latest = parseFloat(obs.at(-1).value);
-  const yearAgo = parseFloat(obs.at(-13).value); // 12 months ago
-  const yoy = ((latest - yearAgo) / yearAgo) * 100;
-  return Math.round(yoy * 10) / 10; // rounded to 1 decimal place
+  // pull 13 months so obs[0] is 12-months-ago, obs[12] is latest
+  const obs = fetchFredSeries('CPIAUCSL', FRED_API_KEY, 13);
+  if (obs.length < 13) throw new Error("Not enough CPI data");
+  const older = obs[0].value;
+  const latest = obs[obs.length - 1].value;
+  const yoy = ((latest - older) / older) * 100;
+  return Number(yoy.toFixed(1));
+}
+
+/**
+ * 1) Caching & 2) canonical first-of-month dates in your FRED fetch helper
+ */
+function fetchFredSeries(seriesId, apiKey, count = 12) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = `fred_${seriesId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const url = `https://api.stlouisfed.org/fred/series/observations`
+            + `?series_id=${seriesId}`
+            + `&api_key=${apiKey}`
+            + `&file_type=json`
+            + `&limit=${count}`
+            + `&sort_order=desc`;
+
+  const resp = UrlFetchApp.fetch(url);
+  const data = JSON.parse(resp.getContentText());
+
+  // Keep only numeric values, map date → YYYY-MM-01
+  const observations = data.observations
+    .filter(o => o.value !== '.' && !isNaN(+o.value))
+    .map(o => {
+      const [yyyy, mm] = o.date.split('-');
+      return {
+        date: `${yyyy}-${mm}-01`,
+        value: +o.value
+      };
+    })
+    .reverse(); // so obs[0] is oldest, obs[obs.length-1] is newest
+
+  // cache for 1 hour (3600 seconds)
+  cache.put(cacheKey, JSON.stringify(observations), 3600);
+
+  return observations;
 }
 
 /**
@@ -96,22 +134,23 @@ function GET_CPI_YOY(debug) {
  *   =GET_CANADIAN_GDP_TREND()
  */
 function GET_CANADIAN_GDP_TREND() {
-  const fredKey = FRED_API_KEY;  // reuse your existing FRED key
-  const series = 'NGDPRSAXDCCAQ'; // Real GDP, Canada, quarterly, SA  [oai_citation:0‡FRED](https://fred.stlouisfed.org/series/NGDPRSAXDCCAQ?utm_source=chatgpt.com)
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series}&api_key=${fredKey}&file_type=json`;
+  const url = `https://api.stlouisfed.org/fred/series/observations`
+            + `?series_id=NGDPRSAXDCCAQ`
+            + `&api_key=${FRED_API_KEY}`
+            + `&file_type=json`;
 
   try {
     const resp = UrlFetchApp.fetch(url);
-    const data = JSON.parse(resp.getContentText());
-    const obs = data.observations;
+    const obs  = JSON.parse(resp.getContentText()).observations;
     if (obs.length < 2) throw new Error("Not enough data points");
 
-    const latest = parseFloat(obs.at(-1).value);
-    const prev   = parseFloat(obs.at(-2).value);
+    // always use [length-1] and [length-2], rather than pop() or .at()
+    const latest = +obs[obs.length - 1].value;
+    const prev   = +obs[obs.length - 2].value;
 
-    if (latest > prev)   return "Rising";
-    if (latest < prev)   return "Shrinking";
-                         return "No change";
+    if      (latest > prev) return "Rising";
+    else if (latest < prev) return "Shrinking";
+    else                    return "No change";
   } catch (e) {
     return `Error: ${e.message}`;
   }
@@ -195,52 +234,43 @@ function GET_CREDIT_SPREAD() {
  * This will populate a range with historical data that can be used by the enhanced functions
  */
 function GET_HISTORICAL_INDICATORS() {
-  const fredKey = FRED_API_KEY;
-  
-  // FRED series IDs for each indicator
-  const seriesMap = {
-    'unemployment': 'UNRATE',           // US Unemployment Rate
-    'usCPI': 'CPIAUCSL',               // US CPI (annual % change)
-    'canCPI': 'CANCPIALLMINMEI',       // Canada CPI 
-    'canGDP': 'NGDPRSAXDCCAQ',         // Canada Real GDP
-    'vix': 'VIXCLS',                   // VIX (daily, we'll get monthly avg)
-    'yieldCurve': 'T10Y2Y',            // 10Y-2Y Treasury Spread
-    'creditSpread': 'BAMLC0A0CM'       // Investment Grade Credit Spread
-  };
-  
+    const fredKey = FRED_API_KEY;
   const results = [];
-  const headers = ['Date', 'Unemployment', 'US_CPI', 'Can_CPI', 'Can_GDP', 'VIX', 'Yield_Curve', 'Credit_Spread'];
+  const headers = ['Date','Unemployment','US_CPI','Can_CPI','Can_GDP','VIX','Yield_Curve','Credit_Spread'];
   results.push(headers);
-  
-  try {
-    // Fetch data for each series
-    const allData = {};
-    
-    for (const [indicator, seriesId] of Object.entries(seriesMap)) {
-      const historicalData = fetchFredSeries(seriesId, fredKey, 12); // Get 12 months of data
-      allData[indicator] = historicalData;
-    }
-    
-    // Find common dates and build rows
-    const dates = getCommonDates(allData);
-    
-    dates.forEach(date => {
-      const row = [date];
-      
-      // Add each indicator's value for this date
-      ['unemployment', 'usCPI', 'canCPI', 'canGDP', 'vix', 'yieldCurve', 'creditSpread'].forEach(indicator => {
-        const dataPoint = allData[indicator].find(d => d.date === date);
-        row.push(dataPoint ? dataPoint.value : null);
-      });
-      
-      results.push(row);
+
+  // 1) fetch everything via our helper (with caching & canonical dates)
+  const allData = {
+    unemployment: fetchFredSeries('UNRATE', fredKey, 6),
+    usCPI:         fetchFredSeries('CPIAUCSL', fredKey, 6),
+    canCPI:        fetchFredSeries('CANCPIALLMINMEI', fredKey, 6),
+    canGDP:        fetchFredSeries('NGDPRSAXDCCAQ', fredKey, 6),
+    yieldCurve:    fetchFredSeries('T10Y2Y', fredKey, 6),
+    creditSpread:  fetchFredSeries('BAMLC0A0CM', fredKey, 6),
+    // VIX: use your monthly-avg helper
+    vix: GET_VIX_HISTORY().map(([date, avg]) => ({ date, value: avg }))
+  };
+
+  // 2) find the most recent 6 “first-of-month” dates present across all series
+  const allDates = new Set();
+  Object.values(allData).forEach(arr => arr.forEach(pt => allDates.add(pt.date)));
+  const dates = Array.from(allDates)
+    .sort((a,b) => new Date(b) - new Date(a))
+    .slice(0,6);
+
+  // 3) assemble rows
+  dates.forEach(date => {
+    const row = [date];
+    headers.slice(1).forEach((h, i) => {
+      const key = headers[i+1].toLowerCase().replace(/[-_ ]/g,'');
+      const series = allData[key];
+      const pt = series && series.find(d=>d.date===date);
+      row.push(pt ? pt.value : null);
     });
-    
-    return results;
-    
-  } catch (e) {
-    return [['Error', e.message]];
-  }
+    results.push(row);
+  });
+
+  return results;
 }
 
 /**
