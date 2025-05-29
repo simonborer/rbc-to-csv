@@ -276,59 +276,59 @@ function GET_HISTORICAL_INDICATORS() {
 /**
  * Helper function to fetch a FRED series with specified number of observations
  */
-function fetchFredSeries(seriesId, apiKey, count = 12) {
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&limit=${count}&sort_order=desc`;
+// function fetchFredSeries(seriesId, apiKey, count = 12) {
+//   const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&limit=${count}&sort_order=desc`;
   
-  try {
-    const resp = UrlFetchApp.fetch(url);
-    const data = JSON.parse(resp.getContentText());
-    const observations = data.observations;
+//   try {
+//     const resp = UrlFetchApp.fetch(url);
+//     const data = JSON.parse(resp.getContentText());
+//     const observations = data.observations;
     
-    return observations
-      .filter(obs => obs.value !== '.' && !isNaN(parseFloat(obs.value)))
-      .map(obs => ({
-        date: obs.date,
-        value: parseFloat(obs.value)
-      }))
-      .reverse(); // Most recent first
+//     return observations
+//       .filter(obs => obs.value !== '.' && !isNaN(parseFloat(obs.value)))
+//       .map(obs => ({
+//         date: obs.date,
+//         value: parseFloat(obs.value)
+//       }))
+//       .reverse(); // Most recent first
       
-  } catch (e) {
-    console.log(`Error fetching ${seriesId}: ${e.message}`);
-    return [];
-  }
-}
+//   } catch (e) {
+//     console.log(`Error fetching ${seriesId}: ${e.message}`);
+//     return [];
+//   }
+// }
 
 /**
  * Find dates that are common across multiple series (or closest matches)
  */
-function getCommonDates(allData) {
-  // Get all unique dates
-  const allDates = new Set();
-  Object.values(allData).forEach(series => {
-    series.forEach(point => allDates.add(point.date));
-  });
+// function getCommonDates(allData) {
+//   // Get all unique dates
+//   const allDates = new Set();
+//   Object.values(allData).forEach(series => {
+//     series.forEach(point => allDates.add(point.date));
+//   });
   
-  // Sort dates and take the most recent 6
-  return Array.from(allDates)
-    .sort((a, b) => new Date(b) - new Date(a))
-    .slice(0, 6);
-}
+//   // Sort dates and take the most recent 6
+//   return Array.from(allDates)
+//     .sort((a, b) => new Date(b) - new Date(a))
+//     .slice(0, 6);
+// }
 
 /**
  * Alternative: Get specific indicator history
  * Usage: =GET_UNEMPLOYMENT_HISTORY() returns last 6 unemployment rates
  */
-function GET_UNEMPLOYMENT_HISTORY() {
-  const fredKey = FRED_API_KEY;
-  const seriesId = 'UNRATE';
+// function GET_UNEMPLOYMENT_HISTORY() {
+//   const fredKey = FRED_API_KEY;
+//   const seriesId = 'UNRATE';
   
-  try {
-    const data = fetchFredSeries(seriesId, fredKey, 6);
-    return data.map(d => [d.date, d.value]);
-  } catch (e) {
-    return [['Error', e.message]];
-  }
-}
+//   try {
+//     const data = fetchFredSeries(seriesId, fredKey, 6);
+//     return data.map(d => [d.date, d.value]);
+//   } catch (e) {
+//     return [['Error', e.message]];
+//   }
+// }
 
 /**
  * Get VIX history (monthly averages to match other monthly data)
