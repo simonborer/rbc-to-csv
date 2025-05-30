@@ -402,3 +402,8 @@ function GET_REBALANCE_SIGNAL(assetTicker) {
     ? `Increase ${(finalD*100).toFixed(2)}%`
     : `Decrease ${(Math.abs(finalD)*100).toFixed(2)}%`;
 }
+
+/** Debug: spit out what Apps Script thinks your FRED key is */
+function DEBUG_GET_KEY() {
+  return PropertiesService.getScriptProperties().getProperty('FRED_API_KEY');
+}
