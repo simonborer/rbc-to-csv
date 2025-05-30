@@ -419,3 +419,16 @@ function TEST_FRED_FETCH() {
   Logger.log(resp.getContentText().substring(0,200));  // first 200 chars
   return `HTTP ${resp.getResponseCode()}`;
 }
+
+/**
+ * Clears any cached metric data so that fresh calls happen immediately.
+ */
+function CLEAR_ALL_CACHE() {
+  const cache = CacheService.getScriptCache();
+  // FRED series
+  Object.values(CONFIG.FRED_SERIES).forEach(id => cache.remove('FRED_' + id));
+  // StatCan CPI
+  cache.remove('STATCAN_CPI');
+  // Yahoo VIX
+  cache.remove('YH_VIX');
+}
