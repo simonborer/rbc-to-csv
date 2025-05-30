@@ -315,10 +315,15 @@ function GET_REBALANCE_SIGNAL(assetTicker) {
   // Load allocations
   const allocData = allocSh.getRange('A2:B' + allocSh.getLastRow()).getValues();
   const allocMap = {}, tickers = [];
-  allocData.forEach(r=>{
-    const t = r[0], raw=r[1];
-    let a = parseFloat((''+raw).replace('%',''))/100;
-    if (t && !isNaN(a)) { allocMap[t]=a; tickers.push(t); }
+  allocData.forEach(r => {
+    const t = r[0], raw = r[1];
+    if (!t || raw === '') return;
+    let a = parseFloat((''+raw).replace('%',''));
+    // if the user typed 5.14 (no %), assume it was meant to be a percent
+    if (a > 1) a = a/100;
+    // now a is in [0..1]
+    allocMap[t] = a;
+    tickers.push(t);
   });
 
   // Load metadata
