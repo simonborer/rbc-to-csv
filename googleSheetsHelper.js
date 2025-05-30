@@ -1,3 +1,9 @@
+const SCRIPT_PROP = PropertiesService.getScriptProperties();
+const CONFIG = {
+  // API Keys
+  FRED_API_KEY: SCRIPT_PROP.getProperty('FRED_API_KEY');
+};
+
 function getAmericanUnemploymentRate() {
   const url = `https://api.stlouisfed.org/fred/series/observations?series_id=UNRATE&api_key=${FRED_API_KEY}&file_type=json`;
   const response = UrlFetchApp.fetch(url);
