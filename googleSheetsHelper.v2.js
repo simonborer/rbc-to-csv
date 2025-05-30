@@ -37,13 +37,13 @@ const CONFIG = {
 
   // Indicator weights
   WEIGHTS: {
-    unemployment: 1.5,
+    unemployment: 1.2,
     usCPI:        1.2,
     canCPI:       0.8,
     canGDP:       1.0,
-    vix:          1.3,
-    yieldCurve:   1.4,
-    creditSpread: 1.1
+    vix:          1.5,
+    yieldCurve:   1.7,
+    creditSpread: 1.4
   },
 
   // Trend lookback
