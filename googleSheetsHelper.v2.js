@@ -407,3 +407,15 @@ function GET_REBALANCE_SIGNAL(assetTicker) {
 function DEBUG_GET_KEY() {
   return PropertiesService.getScriptProperties().getProperty('FRED_API_KEY');
 }
+
+function TEST_FRED_FETCH() {
+  const key = PropertiesService.getScriptProperties().getProperty('FRED_API_KEY').trim();
+  const url = `https://api.stlouisfed.org/fred/series/observations`
+            + `?series_id=UNRATE`
+            + `&api_key=${key}`
+            + `&file_type=json&limit=1&sort_order=desc`;
+  let resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  Logger.log('HTTP ' + resp.getResponseCode());
+  Logger.log(resp.getContentText().substring(0,200));  // first 200 chars
+  return `HTTP ${resp.getResponseCode()}`;
+}
