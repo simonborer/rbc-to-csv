@@ -5,7 +5,7 @@ const CONFIG = {
 };
 
 function getAmericanUnemploymentRate() {
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=UNRATE&api_key=${FRED_API_KEY}&file_type=json`;
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=UNRATE&api_key=${CONFIG.FRED_API_KEY}&file_type=json`;
   const response = UrlFetchApp.fetch(url);
   const data = JSON.parse(response.getContentText());
   const latest = data.observations.pop();
@@ -13,7 +13,7 @@ function getAmericanUnemploymentRate() {
 }
 
 function getUsCpi() {
-  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCNS&api_key=${FRED_API_KEY}&file_type=json`;
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCNS&api_key=${CONFIG.FRED_API_KEY}&file_type=json`;
   const response = UrlFetchApp.fetch(url);
   const data = JSON.parse(response.getContentText());
   const latest = data.observations.at(-1);
@@ -22,7 +22,7 @@ function getUsCpi() {
 
 function getUsCpiYearOverYear() {
   // pull 13 months so obs[0] is 12-months-ago, obs[12] is latest
-  const obs = fetchFredSeries('CPIAUCSL', FRED_API_KEY, 13);
+  const obs = fetchFredSeries('CPIAUCSL', CONFIG.FRED_API_KEY, 13);
   if (obs.length < 13) throw new Error("Not enough CPI data");
   const older = obs[0].value;
   const latest = obs[obs.length - 1].value;
@@ -142,7 +142,7 @@ function GET_CPI_YOY(debug) {
 function GET_CANADIAN_GDP_TREND() {
   const url = `https://api.stlouisfed.org/fred/series/observations`
             + `?series_id=NGDPRSAXDCCAQ`
-            + `&api_key=${FRED_API_KEY}`
+            + `&api_key=${CONFIG.FRED_API_KEY}`
             + `&file_type=json`;
 
   try {
@@ -191,7 +191,7 @@ function GET_VIX() {
  */
 function GET_YIELD_CURVE() {
   try {
-    const key = FRED_API_KEY;
+    const key = CONFIG.FRED_API_KEY;
     // Fetch 10-year
     const tenUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=GS10&api_key=${key}&file_type=json`;
     const twoUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=GS2&api_key=${key}&file_type=json`;
@@ -217,7 +217,7 @@ function GET_YIELD_CURVE() {
  */
 function GET_CREDIT_SPREAD() {
   try {
-    const key = FRED_API_KEY;
+    const key = CONFIG.FRED_API_KEY;
     const baaUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=BAA&api_key=${key}&file_type=json`;
     const tenUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=GS10&api_key=${key}&file_type=json`;
     const baa = JSON.parse(UrlFetchApp.fetch(baaUrl).getContentText())
@@ -240,7 +240,7 @@ function GET_CREDIT_SPREAD() {
  * This will populate a range with historical data that can be used by the enhanced functions
  */
 function GET_HISTORICAL_INDICATORS() {
-    const fredKey = FRED_API_KEY;
+    const fredKey = CONFIG.FRED_API_KEY;
   const results = [];
   const headers = ['Date','Unemployment','US_CPI','Can_CPI','Can_GDP','VIX','Yield_Curve','Credit_Spread'];
   results.push(headers);
@@ -325,7 +325,7 @@ function GET_HISTORICAL_INDICATORS() {
  * Usage: =GET_UNEMPLOYMENT_HISTORY() returns last 6 unemployment rates
  */
 // function GET_UNEMPLOYMENT_HISTORY() {
-//   const fredKey = FRED_API_KEY;
+//   const fredKey = CONFIG.FRED_API_KEY;
 //   const seriesId = 'UNRATE';
   
 //   try {
@@ -340,7 +340,7 @@ function GET_HISTORICAL_INDICATORS() {
  * Get VIX history (monthly averages to match other monthly data)
  */
 function GET_VIX_HISTORY() {
-  const fredKey = FRED_API_KEY;
+  const fredKey = CONFIG.FRED_API_KEY;
   const seriesId = 'VIXCLS';
   
   try {
@@ -387,7 +387,7 @@ function GET_VIX_HISTORY() {
  * This replaces the sheet-based version in the enhanced signal function
  */
 function getHistoricalDataFromFRED(ss) {
-  const fredKey = FRED_API_KEY;
+  const fredKey = CONFIG.FRED_API_KEY;
   
   if (!fredKey) {
     console.log("No FRED API key available, skipping historical data");
