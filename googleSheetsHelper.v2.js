@@ -4,16 +4,29 @@
  * - Health check for external data feeds
  * - Scoring model using macro indicators
  * - Enhanced GET_REBALANCE_SIGNAL and CHECK_DATA_FEEDS functions
+ *
+ * [2025-06-13] Update: Portfolio allocations updated and logic reviewed for new asset mix.
+ * New target allocations (TFSA portfolio):
+ *   CASH.TO 25.03%, XEQT.TO 15.81%, ZLB.TO 10.56%, T.TO 9.95%, SLF.TO 8.84%,
+ *   BRK.B 8.28%, ESGV 7.28%, GUD.TO 4.57%, KSI.TO 3.96%, VIU.TO 3.89%, NVDA.TO 1.66%.
+ * These values should be reflected in the 'Asset Allocations' sheet (column B as % of total).
+ * Added entries for new tickers in 'Asset Metadata' sheet with Class, Region, Sensitivity:
+ *   - BRK.B, ESGV, NVDA.TO as U.S. equities (Class='Equity', Region='U.S.');
+ *   - T.TO, SLF.TO, ZLB.TO, GUD.TO, KSI.TO as Canadian equities (Class='Equity', Region='Canada');
+ *   - XEQT.TO, VIU.TO as global ETFs (Class='Equity', Region='Global').
+ * For sensitivity: higher volatility tech stocks (NVDA, KSI) may use sens ~1.2; low-vol/defensive stocks (Telus, ZLB)
+ * sens ~0.8-0.9; others sens ~1.0. Macro indicator logic unchanged (U.S./Canada economic signals and VIX guide shifts).
  */
-
+ 
 // -----------------------------------------------------------------------------
 // Configuration Constants
 // -----------------------------------------------------------------------------
+const CACHE_VERSION = 'v3';
 const SCRIPT_PROP = PropertiesService.getScriptProperties();
 const CONFIG = {
   // API Keys
   FRED_API_KEY: SCRIPT_PROP.getProperty('FRED_API_KEY'),
-
+ 
   // Series IDs
   FRED_SERIES: {
     unemployment: 'UNRATE',
@@ -24,17 +37,17 @@ const CONFIG = {
     creditSpread: 'BAMLC0A0CM',
     vix:          'VIXCLS'
   },
-
+ 
   STATCAN_VECTOR: 41690973,  // Canadian CPI vectorId
   YAHOO_TICKERS: { vix: '%5EVIX' },
-
+ 
   // Scoring thresholds
   THRESHOLDS: {
     unemployment: { veryLow: 3.5, low: 4.5, high: 5.5, veryHigh: 6.5 },
     cpi:          { veryLow: 1.0, target: 2.0, tolerance: 0.5, high: 4.0 },
     vix:          { low: 15, normal: 20, elevated: 25, high: 30 }
   },
-
+ 
   // Indicator weights
   WEIGHTS: {
     unemployment: 1.2,
@@ -45,10 +58,10 @@ const CONFIG = {
     yieldCurve:   1.7,
     creditSpread: 1.4
   },
-
+ 
   // Trend lookback
   TREND_PERIODS: 3,
-
+ 
   // Rebalancing parameters
   REBALANCING: {
     minThreshold: 0.005,    // 0.5%
@@ -57,21 +70,22 @@ const CONFIG = {
     balanceConstraint:     true
   }
 };
-
+ 
 // -----------------------------------------------------------------------------
 // Utility: Fetch from cache or call function
 // -----------------------------------------------------------------------------
 function withCache(key, ttlSec, fetchFunction) {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get(key);
+  const cacheKey = `${CACHE_VERSION}_${key}`;
+  const cache    = CacheService.getScriptCache();
+  const cached   = cache.get(cacheKey);
   if (cached) {
     return JSON.parse(cached);
   }
   const value = fetchFunction();
-  cache.put(key, JSON.stringify(value), ttlSec);
+  cache.put(cacheKey, JSON.stringify(value), ttlSec);
   return value;
 }
-
+ 
 // -----------------------------------------------------------------------------
 // Data Fetchers (with error handling & caching)
 // -----------------------------------------------------------------------------
@@ -94,7 +108,7 @@ function fetchFredLatest(seriesId) {
     }
   });
 }
-
+ 
 function fetchStatCanCPI() {
   return withCache('STATCAN_CPI', 21600, () => {
     try {
@@ -114,7 +128,7 @@ function fetchStatCanCPI() {
     }
   });
 }
-
+ 
 function fetchYahooVIX() {
   return withCache('YH_VIX', 3600, () => {
     try {
@@ -133,7 +147,7 @@ function fetchYahooVIX() {
     }
   });
 }
-
+ 
 // Historical series for trend analysis
 function fetchFredSeries(seriesId, count) {
   return withCache(`FRED_SERIES_${seriesId}_${count}`, 21600, () => {
@@ -155,7 +169,7 @@ function fetchFredSeries(seriesId, count) {
     }
   });
 }
-
+ 
 // -----------------------------------------------------------------------------
 // Indicator Gathering and Health Check
 // -----------------------------------------------------------------------------
@@ -168,10 +182,10 @@ function getIndicatorData() {
   const yc   = fetchFredLatest(CONFIG.FRED_SERIES.yieldCurve);
   const cs   = fetchFredLatest(CONFIG.FRED_SERIES.creditSpread);
   const vix  = fetchYahooVIX();
-
+ 
   return { unemployment: u, usCPI, canCPI: caCPI, canGDP: gdp, yieldCurve: yc, creditSpread: cs, vix };
 }
-
+ 
 /**
  * Health check: returns [[metric, status], ...] for sheet
  */
@@ -184,7 +198,7 @@ function CHECK_DATA_FEEDS() {
   }
   return rows;
 }
-
+ 
 // -----------------------------------------------------------------------------
 // Trend Calculation
 // -----------------------------------------------------------------------------
@@ -197,7 +211,7 @@ function calculateTrend(historical, periods) {
   const change = (avg(recent) - avg(older)) / avg(older);
   return Math.max(-1, Math.min(1, change * 10));
 }
-
+ 
 // -----------------------------------------------------------------------------
 // Scoring Functions
 // -----------------------------------------------------------------------------
@@ -214,7 +228,7 @@ function calculateUnemploymentScore(curr, hist) {
   if (adj) { base -= adj*0.5; d += adj>0?' Rising':' Falling'; }
   return { score:Math.max(-2,Math.min(2,base)), description:d };
 }
-
+ 
 function calculateCPIScore(curr, hist, region) {
   if (curr==null) return { score:0, desc:'No data' };
   const t = CONFIG.THRESHOLDS.cpi;
@@ -228,7 +242,7 @@ function calculateCPIScore(curr, hist, region) {
   if (adj) { base -= Math.sign(adj)*0.3; d+= adj>0?' Rising':' Falling'; }
   return { score:Math.max(-2,Math.min(2,base)), description:d };
 }
-
+ 
 function calculateVIXScore(curr, hist) {
   if (curr==null) return { score:0, desc:'No data' };
   const t = CONFIG.THRESHOLDS.vix;
@@ -242,7 +256,7 @@ function calculateVIXScore(curr, hist) {
   if (adj) { base -= adj*0.4; d += adj>0?' Rising':' Falling'; }
   return { score:Math.max(-2,Math.min(2,base)), description:d };
 }
-
+ 
 function calculateGDPScore(curr) {
   if (!curr) return { score:0, desc:'No data' };
   const txt = curr.toString().toLowerCase();
@@ -253,7 +267,7 @@ function calculateGDPScore(curr) {
   else if (down.some(w=>txt.includes(w))) base=-1;
   return { score:base, description:curr };
 }
-
+ 
 function calculateYieldScore(curr, hist) {
   if (curr==null) return { score:0, desc:'No data' };
   let base=0, d=`${curr}%`;
@@ -265,7 +279,7 @@ function calculateYieldScore(curr, hist) {
   if (adj) { base += adj*0.3; d += adj>0?' Steepening':' Flattening'; }
   return { score:Math.max(-2,Math.min(2,base)), description:d };
 }
-
+ 
 function calculateCreditScore(curr, hist) {
   if (curr==null) return { score:0, desc:'No data' };
   let base=0, d=`${curr}%`;
@@ -277,7 +291,7 @@ function calculateCreditScore(curr, hist) {
   if (adj) { base -= adj*0.4; d += adj>0?' Widening':' Tightening'; }
   return { score:Math.max(-2,Math.min(2,base)), description:d };
 }
-
+ 
 // -----------------------------------------------------------------------------
 // Aggregation: Enhanced Market Data
 // -----------------------------------------------------------------------------
@@ -303,7 +317,7 @@ function getEnhancedMarketData() {
   };
   return { indicators: ind, scores, config: CONFIG };
 }
-
+ 
 // -----------------------------------------------------------------------------
 // Main: GET_REBALANCE_SIGNAL(assetTicker)
 // -----------------------------------------------------------------------------
@@ -311,7 +325,7 @@ function GET_REBALANCE_SIGNAL(assetTicker) {
   const ss = SpreadsheetApp.getActive();
   const allocSh = ss.getSheetByName('Asset Allocations');
   const metaSh = ss.getSheetByName('Asset Metadata');
-
+ 
   // Load allocations
   const allocData = allocSh.getRange('A2:B' + allocSh.getLastRow()).getValues();
   const allocMap = {}, tickers = [];
@@ -325,83 +339,99 @@ function GET_REBALANCE_SIGNAL(assetTicker) {
     allocMap[t] = a;
     tickers.push(t);
   });
-
+ 
   // Load metadata
   const meta = metaSh.getRange('A2:D' + metaSh.getLastRow()).getValues();
   const classMap={}, regionMap={}, sensMap={};
-  meta.forEach(r=>{ classMap[r[0]]=r[1]; regionMap[r[0]]=r[2]; sensMap[r[0]]=parseFloat(r[3])||1; });
-  if (!(assetTicker in classMap)) throw new Error('No metadata for '+assetTicker);
+  meta.forEach(r=>{ 
+    classMap[r[0]] = r[1]; 
+    regionMap[r[0]] = r[2]; 
+    sensMap[r[0]] = parseFloat(r[3]) || 1; 
+  });
 
   // Fetch market scores
   const mkt = getEnhancedMarketData();
   const scores = mkt.scores;
   const cfg = mkt.config;
-
-  // Regional score
+ 
+  // Regional score (weighted average of indicators based on region)
   function getRegionalScore(t) {
-    const region = regionMap[t]||'Global';
-    let total=0, wsum=0;
-    if (region==='U.S.') {
-      [['unemployment',1.5],['usCPI',1.3],['vix',1.2],['yieldCurve',1.1],['creditSpread',1.1]].forEach(([k,m])=>{
-        total+=scores[k]*cfg.WEIGHTS[k]*m; wsum+=cfg.WEIGHTS[k]*m;
-      });
-    } else if (region==='Canada') {
-      [['canCPI',1.5],['canGDP',1.4],['unemployment',0.7],['vix',0.8]].forEach(([k,m])=>{
-        total+=scores[k]*cfg.WEIGHTS[k]*m; wsum+=cfg.WEIGHTS[k]*m;
-      });
+    const region = regionMap[t] || 'Global';
+    let total = 0, wsum = 0;
+    if (region === 'U.S.') {
+      [['unemployment',1.5], ['usCPI',1.3], ['vix',1.2], ['yieldCurve',1.1], ['creditSpread',1.1]]
+        .forEach(([k, m]) => { total += scores[k] * cfg.WEIGHTS[k] * m; wsum += cfg.WEIGHTS[k] * m; });
+    } else if (region === 'Canada') {
+      [['canCPI',1.5], ['canGDP',1.4], ['unemployment',0.7], ['vix',0.8]]
+        .forEach(([k, m]) => { total += scores[k] * cfg.WEIGHTS[k] * m; wsum += cfg.WEIGHTS[k] * m; });
     } else {
-      for (const k in scores) if (cfg.WEIGHTS[k]!=null) { total+=scores[k]*cfg.WEIGHTS[k]; wsum+=cfg.WEIGHTS[k]; }
+      for (const k in scores) {
+        if (cfg.WEIGHTS[k] != null) { 
+          total += scores[k] * cfg.WEIGHTS[k]; 
+          wsum += cfg.WEIGHTS[k]; 
+        }
+      }
     }
-    return wsum? total/wsum : 0;
+    return wsum ? total / wsum : 0;
   }
-
-  // Delta calculation
+ 
+  // Delta calculation for a given asset
   function calcDelta(t) {
     const regionScore = getRegionalScore(t);
-    let shift=0;
-    if      (regionScore>=1.5) shift=0.08;
-    else if (regionScore>=0.75) shift=0.05;
-    else if (regionScore>=0.25) shift=0.025;
-    else if (regionScore>=-0.25) shift=0;
-    else if (regionScore>=-0.75) shift=-0.025;
-    else if (regionScore>=-1.5) shift=-0.05;
-    else shift=-0.08;
-    shift *= sensMap[t];
+    let shift = 0;
+    if      (regionScore >= 1.5)  shift = 0.08;
+    else if (regionScore >= 0.75) shift = 0.05;
+    else if (regionScore >= 0.25) shift = 0.025;
+    else if (regionScore >= -0.25) shift = 0;
+    else if (regionScore >= -0.75) shift = -0.025;
+    else if (regionScore >= -1.5) shift = -0.05;
+    else                          shift = -0.08;
+    shift *= sensMap[t];  // adjust for asset sensitivity
     if (cfg.REBALANCING.volatilityAdjustment) {
       const vixScore = scores.vix;
-      if (vixScore < -1) shift *= 0.7;
+      if (vixScore < -1) shift *= 0.7;  // reduce shifts in very low-volatility regime
     }
-    return classMap[t]==='Defensive' ? -shift : shift;
+    // Invert shift for defensive assets (they move opposite to risk appetite)
+    return (classMap[t] === 'Defensive') ? -shift : shift;
   }
-
-  // Compute raw shifts
-  const rawDelta = {}, defList=[], eqList=[];
-  tickers.forEach(t=>{ rawDelta[t]=calcDelta(t); if (classMap[t]==='Defensive') defList.push(t); else eqList.push(t); });
-
-  // Balance offsets
+ 
+  // Compute raw recommended shifts for all assets
+  const rawDelta = {}, defList = [], eqList = [];
+  tickers.forEach(t => {
+    rawDelta[t] = calcDelta(t);
+    if (classMap[t] === 'Defensive') defList.push(t);
+    else                             eqList.push(t);
+  });
+ 
+  // Balance offsets: ensure net sum of changes ~ 0 (no new capital added)
   if (cfg.REBALANCING.balanceConstraint) {
-    let net=0, defAlloc=0, eqAlloc=0;
-    defList.forEach(t=>{ net+=rawDelta[t]*allocMap[t]; defAlloc+=allocMap[t]; });
-    eqList.forEach(t=>{ net+=rawDelta[t]*allocMap[t]; eqAlloc+=allocMap[t]; });
-    if (Math.abs(net)>0.001) {
-      const adj = -net/2;
-      if (defAlloc) defList.forEach(t=> rawDelta[t]+=adj/defAlloc);
-      if (eqAlloc) eqList.forEach(t=> rawDelta[t]+=adj/eqAlloc);
+    let net = 0, defAlloc = 0, eqAlloc = 0;
+    defList.forEach(t => { net += rawDelta[t] * allocMap[t]; defAlloc += allocMap[t]; });
+    eqList.forEach(t  => { net += rawDelta[t] * allocMap[t]; eqAlloc  += allocMap[t]; });
+    if (Math.abs(net) > 0.001) {
+      const adj = -net / 2;
+      if (defAlloc) defList.forEach(t => { rawDelta[t] += adj / defAlloc; });
+      if (eqAlloc)  eqList.forEach(t => { rawDelta[t] += adj / eqAlloc; });
     }
   }
+ 
+  // Normalize and get final recommended allocation for the target asset
+  const sumNew = tickers.reduce((sum, t) => 
+                   sum + Math.max(0, allocMap[t] * (1 + rawDelta[t])), 0);
+  const oldAlloc = allocMap[assetTicker];
+  const newAlloc = Math.max(0, oldAlloc * (1 + rawDelta[assetTicker])) / sumNew;
+  const finalDelta = newAlloc / oldAlloc - 1;
+ 
+  // Format output signal
+  if (Math.abs(finalDelta) < cfg.REBALANCING.minThreshold) {
+    return 'Hold';
+  }
 
-  // Normalize and get final change for requested ticker
-  const sumNew = tickers.reduce((s,t)=> s + Math.max(0, allocMap[t]*(1+rawDelta[t])), 0);
-  const oldA=allocMap[assetTicker];
-  const newA= Math.max(0, allocMap[assetTicker]*(1+rawDelta[assetTicker]))/sumNew;
-  const finalD = newA/oldA - 1;
-
-  // Format output
-  if (Math.abs(finalD) < cfg.REBALANCING.minThreshold) return 'Hold';
-  return finalD>0
-    ? `Increase ${(finalD*100).toFixed(2)}%`
-    : `Decrease ${(Math.abs(finalD)*100).toFixed(2)}%`;
+  return (finalDelta > 0)
+    ? `Increase ${(finalDelta * 100).toFixed(2)}%`
+    : `Decrease ${(Math.abs(finalDelta) * 100).toFixed(2)}%`;
 }
+
 
 /** Debug: spit out what Apps Script thinks your FRED key is */
 function DEBUG_GET_KEY() {
@@ -431,4 +461,31 @@ function CLEAR_ALL_CACHE() {
   cache.remove('STATCAN_CPI');
   // Yahoo VIX
   cache.remove('YH_VIX');
+}
+
+function TEST_FRED_LATEST() {
+  const result = fetchFredLatest(CONFIG.FRED_SERIES.unemployment);
+  Logger.log(result);
+}
+
+/**
+ * Returns the raw FRED JSON response for UNRATE so you can inspect any error message.
+ * Usage: run this in the Apps Script editor, then View → Logs
+ * Or call =DEBUG_FRED_RESPONSE() in your sheet (it will spill the JSON text).
+ */
+function DEBUG_FRED_RESPONSE() {
+  const key = PropertiesService.getScriptProperties()
+                .getProperty('FRED_API_KEY')
+                .trim();
+  const url =
+    'https://api.stlouisfed.org/fred/series/observations' +
+    '?series_id=UNRATE' +
+    `&api_key=${key}` +
+    '&file_type=json&limit=1&sort_order=desc';
+  
+  const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  // Log it in the editor
+  Logger.log(resp.getContentText());
+  // Return it to the sheet (if you want)
+  return resp.getContentText();
 }
